@@ -1,0 +1,336 @@
+#pragma kernel CSMain
+#pragma kernel ResetTraversalState
+#pragma kernel SeedCoarseRoots
+#pragma kernel TraverseFrontier
+#pragma kernel SwapFrontierCounts
+#pragma kernel BuildIndirectArgs
+
+struct NanoMeshInstanceData
+{
+    float4x4 localToWorld;
+    float4x4 worldToLocal;
+    float4 worldBoundsSphere;
+    float3 worldBoundsExtents;
+    int assetIndex;
+    float lodBias;
+    float errorScale;
+};
+
+struct ClusterRecordGpu
+{
+    int vertexDataOffsetBytes;
+    int vertexCount;
+    int indexDataOffsetBytes;
+    int indexCount;
+    int materialRangeIndex;
+    int hierarchyNodeIndex;
+    int hierarchyLevel;
+    float geometricError;
+    float3 positionOrigin;
+    float padding0;
+    float3 positionExtent;
+    float padding1;
+};
+
+struct ClusterCullRecordGpu
+{
+    float3 localBoundsCenter;
+    float padding0;
+    float3 localBoundsExtents;
+    float geometricError;
+    float4 boundingSphere;
+    float4 normalCone;
+};
+
+struct HierarchyNodeGpu
+{
+    int clusterIndex;
+    int firstClusterIndex;
+    int renderClusterCount;
+    int parentNodeIndex;
+    int firstChildNodeIndex;
+    int childCount;
+    int hierarchyLevel;
+    int isLeaf;
+    float3 localBoundsCenter;
+    float geometricError;
+    float3 localBoundsExtents;
+    float parentError;
+    float4 boundingSphere;
+    float4 normalCone;
+};
+
+struct TraversalNodeRecord
+{
+    int preparedInstanceIndex;
+    int hierarchyNodeIndex;
+};
+
+struct VisibleClusterRecord
+{
+    int preparedInstanceIndex;
+    int assetIndex;
+    int clusterIndex;
+    int materialRangeIndex;
+    int hierarchyLevel;
+};
+
+StructuredBuffer<NanoMeshInstanceData> _NanoMeshInstanceBuffer;
+StructuredBuffer<uint> _VisibleInstanceBuffer;
+AppendStructuredBuffer<uint> _VisibleInstanceAppendBuffer;
+StructuredBuffer<int> _CoarseRootNodeBuffer;
+StructuredBuffer<ClusterRecordGpu> _NanoMeshClusterBuffer;
+StructuredBuffer<ClusterCullRecordGpu> _NanoMeshClusterCullBuffer;
+StructuredBuffer<HierarchyNodeGpu> _NanoMeshHierarchyNodeBuffer;
+RWStructuredBuffer<TraversalNodeRecord> _CurrentFrontierBuffer;
+RWStructuredBuffer<TraversalNodeRecord> _NextFrontierBuffer;
+RWStructuredBuffer<VisibleClusterRecord> _VisibleClusterBuffer;
+RWStructuredBuffer<uint> _DebugCounters;
+RWStructuredBuffer<uint> _IndirectArgsBuffer;
+
+float4 _FrustumPlanes[6];
+float3 _CameraPositionWS;
+float _ProjectionScale;
+float _LodErrorThreshold;
+int _PreparedInstanceCount;
+int _VisibleInstanceCount;
+int _ActiveAssetIndex;
+int _CoarseRootCount;
+int _UseConeCulling;
+int _VisibleClusterCapacity;
+int _TraversalCapacity;
+
+static const uint COUNTER_CURRENT_FRONTIER = 0u;
+static const uint COUNTER_NEXT_FRONTIER = 1u;
+static const uint COUNTER_VISIBLE_CLUSTERS = 2u;
+static const uint COUNTER_TRAVERSED_NODES = 3u;
+static const uint COUNTER_ACCEPTED_CLUSTERS = 4u;
+
+bool FrustumCullSphere(float3 centerWS, float radiusWS)
+{
+    [unroll]
+    for (uint planeIndex = 0; planeIndex < 6; planeIndex++)
+    {
+        float4 plane = _FrustumPlanes[planeIndex];
+        float distanceToPlane = dot(plane.xyz, centerWS) + plane.w;
+        if (distanceToPlane < -radiusWS)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+float ComputeMaxScale(float4x4 localToWorldMatrix)
+{
+    float3 axisX = mul((float3x3)localToWorldMatrix, float3(1.0f, 0.0f, 0.0f));
+    float3 axisY = mul((float3x3)localToWorldMatrix, float3(0.0f, 1.0f, 0.0f));
+    float3 axisZ = mul((float3x3)localToWorldMatrix, float3(0.0f, 0.0f, 1.0f));
+    return max(length(axisX), max(length(axisY), length(axisZ)));
+}
+
+bool ConeCull(HierarchyNodeGpu node, float4x4 localToWorld, float3 centerWS)
+{
+    if (_UseConeCulling == 0)
+    {
+        return false;
+    }
+
+    float3 axisOS = node.normalCone.xyz;
+    float axisLength = length(axisOS);
+    if (axisLength < 0.0001f)
+    {
+        return false;
+    }
+
+    float3 axisWS = normalize(mul((float3x3)localToWorld, axisOS / axisLength));
+    float3 viewDir = normalize(_CameraPositionWS - centerWS);
+    return dot(axisWS, viewDir) <= -abs(node.normalCone.w);
+}
+
+[numthreads(64, 1, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    uint instanceIndex = id.x;
+    if (instanceIndex == 0)
+    {
+        _DebugCounters[0] = (uint)max(_PreparedInstanceCount, 0);
+        _DebugCounters[1] = 0;
+    }
+
+    if (instanceIndex >= (uint)_PreparedInstanceCount)
+    {
+        return;
+    }
+
+    NanoMeshInstanceData instanceData = _NanoMeshInstanceBuffer[instanceIndex];
+    float3 center = instanceData.worldBoundsSphere.xyz;
+    float radius = instanceData.worldBoundsSphere.w;
+
+    if (FrustumCullSphere(center, radius))
+    {
+        return;
+    }
+
+    _VisibleInstanceAppendBuffer.Append(instanceIndex);
+    InterlockedAdd(_DebugCounters[1], 1);
+}
+
+[numthreads(1, 1, 1)]
+void ResetTraversalState(uint3 id : SV_DispatchThreadID)
+{
+    _DebugCounters[COUNTER_CURRENT_FRONTIER] = 0u;
+    _DebugCounters[COUNTER_NEXT_FRONTIER] = 0u;
+}
+
+[numthreads(64, 1, 1)]
+void SeedCoarseRoots(uint3 id : SV_DispatchThreadID)
+{
+    uint visibleInstanceIndex = id.x;
+    if (visibleInstanceIndex >= (uint)_VisibleInstanceCount)
+    {
+        return;
+    }
+
+    uint preparedInstanceIndex = _VisibleInstanceBuffer[visibleInstanceIndex];
+    if (preparedInstanceIndex >= (uint)_PreparedInstanceCount)
+    {
+        return;
+    }
+
+    NanoMeshInstanceData instanceData = _NanoMeshInstanceBuffer[preparedInstanceIndex];
+    if (instanceData.assetIndex != _ActiveAssetIndex)
+    {
+        return;
+    }
+
+    for (int coarseRootIndex = 0; coarseRootIndex < _CoarseRootCount; coarseRootIndex++)
+    {
+        uint writeIndex;
+        InterlockedAdd(_DebugCounters[COUNTER_CURRENT_FRONTIER], 1u, writeIndex);
+        if (writeIndex >= (uint)_TraversalCapacity)
+        {
+            continue;
+        }
+
+        TraversalNodeRecord record;
+        record.preparedInstanceIndex = (int)preparedInstanceIndex;
+        record.hierarchyNodeIndex = _CoarseRootNodeBuffer[coarseRootIndex];
+        _CurrentFrontierBuffer[writeIndex] = record;
+    }
+}
+
+[numthreads(64, 1, 1)]
+void TraverseFrontier(uint3 id : SV_DispatchThreadID)
+{
+    uint frontierIndex = id.x;
+    uint frontierCount = _DebugCounters[COUNTER_CURRENT_FRONTIER];
+    if (frontierIndex >= frontierCount)
+    {
+        return;
+    }
+
+    TraversalNodeRecord traversalNode = _CurrentFrontierBuffer[frontierIndex];
+    if (traversalNode.preparedInstanceIndex < 0 || traversalNode.preparedInstanceIndex >= _PreparedInstanceCount)
+    {
+        return;
+    }
+
+    NanoMeshInstanceData instanceData = _NanoMeshInstanceBuffer[traversalNode.preparedInstanceIndex];
+    if (instanceData.assetIndex != _ActiveAssetIndex)
+    {
+        return;
+    }
+
+    if (traversalNode.hierarchyNodeIndex < 0)
+    {
+        return;
+    }
+
+    HierarchyNodeGpu node = _NanoMeshHierarchyNodeBuffer[traversalNode.hierarchyNodeIndex];
+    float maxScale = ComputeMaxScale(instanceData.localToWorld);
+    float3 sphereCenterWS = mul(instanceData.localToWorld, float4(node.boundingSphere.xyz, 1.0f)).xyz;
+    float sphereRadiusWS = max(node.boundingSphere.w * maxScale, 0.001f);
+
+    InterlockedAdd(_DebugCounters[COUNTER_TRAVERSED_NODES], 1u);
+
+    if (FrustumCullSphere(sphereCenterWS, sphereRadiusWS))
+    {
+        return;
+    }
+
+    if (ConeCull(node, instanceData.localToWorld, sphereCenterWS))
+    {
+        return;
+    }
+
+    float distanceToCamera = max(length(_CameraPositionWS - sphereCenterWS) - sphereRadiusWS, 0.001f);
+    float errorScale = max(instanceData.errorScale, 0.001f) * max(instanceData.lodBias, 0.001f) * _ProjectionScale / distanceToCamera;
+    float projectedError = node.geometricError * errorScale;
+    float parentProjectedError = node.parentError * errorScale;
+    bool hasRenderableClusters = node.renderClusterCount > 0;
+    bool shouldAccept = false;
+    if (hasRenderableClusters)
+    {
+        bool isTerminal = node.isLeaf != 0 || node.childCount <= 0;
+        shouldAccept = isTerminal || (parentProjectedError > _LodErrorThreshold && projectedError <= _LodErrorThreshold);
+    }
+
+    if (shouldAccept)
+    {
+        for (int renderClusterOffset = 0; renderClusterOffset < node.renderClusterCount; renderClusterOffset++)
+        {
+            int clusterIndex = node.firstClusterIndex + renderClusterOffset;
+            ClusterRecordGpu cluster = _NanoMeshClusterBuffer[clusterIndex];
+            uint visibleClusterIndex;
+            InterlockedAdd(_DebugCounters[COUNTER_VISIBLE_CLUSTERS], 1u, visibleClusterIndex);
+            if (visibleClusterIndex >= (uint)_VisibleClusterCapacity)
+            {
+                continue;
+            }
+
+            VisibleClusterRecord visibleCluster;
+            visibleCluster.preparedInstanceIndex = traversalNode.preparedInstanceIndex;
+            visibleCluster.assetIndex = instanceData.assetIndex;
+            visibleCluster.clusterIndex = clusterIndex;
+            visibleCluster.materialRangeIndex = cluster.materialRangeIndex;
+            visibleCluster.hierarchyLevel = node.hierarchyLevel;
+            _VisibleClusterBuffer[visibleClusterIndex] = visibleCluster;
+            InterlockedAdd(_DebugCounters[COUNTER_ACCEPTED_CLUSTERS], 1u);
+        }
+        return;
+    }
+
+    for (int childOffset = 0; childOffset < node.childCount; childOffset++)
+    {
+        uint nextFrontierIndex;
+        InterlockedAdd(_DebugCounters[COUNTER_NEXT_FRONTIER], 1u, nextFrontierIndex);
+        if (nextFrontierIndex >= (uint)_TraversalCapacity)
+        {
+            continue;
+        }
+
+        TraversalNodeRecord childRecord;
+        childRecord.preparedInstanceIndex = traversalNode.preparedInstanceIndex;
+        childRecord.hierarchyNodeIndex = node.firstChildNodeIndex + childOffset;
+        _NextFrontierBuffer[nextFrontierIndex] = childRecord;
+    }
+}
+
+[numthreads(1, 1, 1)]
+void SwapFrontierCounts(uint3 id : SV_DispatchThreadID)
+{
+    _DebugCounters[COUNTER_CURRENT_FRONTIER] = _DebugCounters[COUNTER_NEXT_FRONTIER];
+    _DebugCounters[COUNTER_NEXT_FRONTIER] = 0u;
+}
+
+[numthreads(1, 1, 1)]
+void BuildIndirectArgs(uint3 id : SV_DispatchThreadID)
+{
+    _IndirectArgsBuffer[0] = _DebugCounters[COUNTER_VISIBLE_CLUSTERS];
+    _IndirectArgsBuffer[1] = 1u;
+    _IndirectArgsBuffer[2] = 0u;
+    _IndirectArgsBuffer[3] = 0u;
+    _IndirectArgsBuffer[4] = 0u;
+}

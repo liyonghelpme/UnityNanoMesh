@@ -1,0 +1,22 @@
+{
+  "name": "NanoMesh.Editor.Tests",
+  "rootNamespace": "NanoMesh.Editor.Tests",
+  "references": [
+    "NanoMesh.Editor",
+    "NanoMesh.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
