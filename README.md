@@ -65,7 +65,15 @@ This project is fully AI-generated and does not contain human-written production
 
 ## Development Approach
 
-Development follows a spec-driven workflow. The design and implementation steps are documented in the `NanoMesh/` folder and serve as the primary reference for the project structure and feature progression.
+Development is fully based on SDD (Spec-Driven Development).
+
+The workflow is:
+
+1. AI studies papers and related engineering references first, then produces the design document.
+2. The design document is used to generate the implementation document.
+3. The implementation document is then executed step by step.
+
+The design and implementation steps are documented in the `NanoMesh/` folder and serve as the primary reference for the project structure and feature progression.
 
 ## License
 
