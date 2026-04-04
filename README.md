@@ -36,6 +36,7 @@ NanoMesh is an experimental Unity project inspired by Unreal Engine 5 Nanite. It
 
 - `Assets/NanoMesh`: core NanoMesh runtime, editor baking tools, shaders, samples, and tests
 - `Doc`: research notes and reference material
+- `Native`: native NanoMesh baker CLI/library and vendored `meshoptimizer` sources
 - `Packages`: Unity package dependencies
 - `ProjectSettings`: Unity project configuration
 
@@ -58,6 +59,14 @@ NanoMesh is an experimental Unity project inspired by Unreal Engine 5 Nanite. It
 
 - Unity 2022.3
 - URP
+- Optional native baker backend: CMake 3.20+ and a C++17 compiler
+
+## Mesh Processing
+
+- NanoMesh can use `meshoptimizer` for offline cluster building, simplification, and quantization.
+- The native baker backend lives in `Native/NanoMeshBaker` and vendors `meshoptimizer` under `Native/third_party/meshoptimizer`.
+- A reference copy is included under `refProj4/meshoptimizer-master/meshoptimizer-master`.
+- If the meshoptimizer CLI backend is unavailable, the baker falls back to the managed Unity backend.
 
 ## Status
 

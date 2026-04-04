@@ -1,0 +1,15 @@
+# CMake and local native build outputs
+NanoMeshBaker/build/
+NanoMeshBaker/out/
+
+# Compiled binaries and debug symbols
+*.exe
+*.dll
+*.lib
+*.pdb
+*.obj
+*.ilk
+
+# Generated smoke-test payloads
+*.nmbreq
+*.nmbres
