@@ -50,6 +50,10 @@ NanoMesh is an experimental Unity project inspired by Unreal Engine 5 Nanite. It
 
 - `Assets/NanoMesh/Samples/Scenes/NanoMeshValidation.unity`: sample validation scene for testing NanoMesh rendering and runtime behavior
 
+## Snapshot
+
+![NanoMesh validation scene snapshot](Assets/Screenshots/nanomesh-readme-snapshot.png)
+
 ## Requirements
 
 - Unity 2022.3
