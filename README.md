@@ -82,6 +82,7 @@ Related engineering references:
 - [Cursor: Self-Driving Codebases](https://cursor.com/cn/blog/self-driving-codebases)
 - [Cursor: Scaling Agents](https://cursor.com/blog/scaling-agents)
 - [Anthropic: Harness Design for Long-Running Apps](https://www.anthropic.com/engineering/harness-design-long-running-apps)
+- [Epic Games: Nanite Virtualized Geometry](https://dev.epicgames.com/documentation/en-us/unreal-engine/nanite-virtualized-geometry-in-unreal-engine)
 
 ## License
 
