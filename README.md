@@ -75,6 +75,14 @@ The workflow is:
 
 The design and implementation steps are documented in the `NanoMesh/` folder and serve as the primary reference for the project structure and feature progression.
 
+Related engineering references:
+
+- [OpenAI: Harness Engineering](https://openai.com/zh-Hans-CN/index/harness-engineering/)
+- [yage.ai: Harness Engineering Scalability](https://yage.ai/share/harness-engineering-scalability-20260330.html)
+- [Cursor: Self-Driving Codebases](https://cursor.com/cn/blog/self-driving-codebases)
+- [Cursor: Scaling Agents](https://cursor.com/blog/scaling-agents)
+- [Anthropic: Harness Design for Long-Running Apps](https://www.anthropic.com/engineering/harness-design-long-running-apps)
+
 ## License
 
 MIT. See `LICENSE`.
