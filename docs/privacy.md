@@ -1,5 +1,5 @@
 ---
-layout: null
+title: "隐私政策"
 ---
 
 温馨提示
