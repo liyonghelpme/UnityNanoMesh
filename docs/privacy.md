@@ -1,14 +1,3 @@
-<style>
-  /* Completely hides the Cayman theme header banner */
-  .page-header {
-    display: none !important;
-  }
-  /* Optional: Adjust top margin so content looks nice */
-  .main-content {
-    padding-top: 2rem !important;
-  }
-</style>
-
 # 【汉末乡野村】隐私政策
 温馨提示
 
