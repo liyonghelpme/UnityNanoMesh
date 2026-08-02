@@ -1,5 +1,15 @@
-<title>【汉末乡野村】隐私政策</title>
+<style>
+  /* Completely hides the Cayman theme header banner */
+  .page-header {
+    display: none !important;
+  }
+  /* Optional: Adjust top margin so content looks nice */
+  .main-content {
+    padding-top: 2rem !important;
+  }
+</style>
 
+# 【汉末乡野村】隐私政策
 温馨提示
 
 欢迎您使用【汉末乡野村】！我们非常重视保护您的个人信息和隐私。您可以通过《【汉末乡野村】隐私政策》了解我们收集、使用、存储用户个人信息的情况，以及您所享有的相关权利。请您仔细阅读并充分理解相关内容：
